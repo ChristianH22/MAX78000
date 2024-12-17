@@ -4,7 +4,13 @@
 
 ## Overview
 
-The current state of the Benchmark uses the Keyword Spotting Demo, described below:
+This Statistical Benchmarking project is designed to optimize the performance of a Neural Architecture Search. This project is automated through the Ultility/smu_sequential_power.py file, which communicates with the MAX78000 and Keysight B2901A through serial.
+
+Running Utility/smu_sequential_power.py runs individual inferences from the on-board SD Card, saving the power consumption and returned logit/latency from the inference to the results folder in CSV format.
+
+The MAX78000 must be Flashed with main.c prior to Utility/running smu_sequential_power.py.
+
+The current state of the CNN on the Benchmark uses the Keyword Spotting Demo, described below:
 
 The Keyword Spotting Demo software demonstrates recognition of a number of keywords using MAX78000 EVKIT.  
 
@@ -28,163 +34,12 @@ Universal instructions on building, flashing, and debugging this project can be 
 
 ### Project-Specific Build Notes
 
-Note:  fully clean and re-build this project after changing any of the config options below.
+### MAX78000 Benchmark Operations
 
-* This project comes pre-configured for the MAX78000EVKIT.  See [Board Support Packages](https://analogdevicesinc.github.io/msdk/USERGUIDE/#board-support-packages) in the UG for instructions on changing the target board.
-
-* This project supports output to a TFT display.  When building for the MAX78000EVKIT, the display is **enabled** by default.
-    * To _disable_ the TFT display code, comment out `PROJ_CFLAGS += -DTFT_ENABLE` in [project.mk](project.mk)
-
-        ```Makefile
-        ifeq "$(BOARD)" "EvKit_V1"
-        # PROJ_CFLAGS+=-DTFT_ENABLE
-        IPATH += TFT/evkit/
-        VPATH += TFT/evkit/
-        endif
-        ```
-
-* When building for the MAX78000FTHR, the TFT display is **disabled** by default.  The compatible 2.4'' TFT FeatherWing is an optional display that does not come with the MAX7800FTHR.  It can be ordered [here](https://learn.adafruit.com/adafruit-2-4-tft-touch-screen-featherwing)
-
-    * To _enable_ the TFT display code, uncomment `PROJ_CFLAGS += -DTFT_ENABLE` in [project.mk](project.mk)
-
-        ```Makefile
-        ifeq "$(BOARD)" "FTHR_RevA"
-        # Only Enable if 2.4" TFT is connected to Feather
-        PROJ_CFLAGS+=-DTFT_ENABLE
-        IPATH += TFT/fthr
-        VPATH += TFT/fthr
-        endif
-        ```
-
-* This project can operate in [microphone mode](#microphone-mode) or [offline mode](#offline-mode).
-
-    * To operate in [microphone mode](#microphone-mode), define `ENABLE_MIC_PROCESSING` in [main.c](main.c)
-
-        ```C
-        #define ENABLE_MIC_PROCESSING // enables capturing Mic, otherwise a header file Test vector is used as sample data
-        ```
-
-    * To operate in [offline mode](#offline-mode), undefine `ENABLE_MIC_PROCESSING` in [main.c](main.c)
-
-        ```C
-        // #define ENABLE_MIC_PROCESSING // enables capturing Mic, otherwise a header file Test vector is used as sample data
-        ```
-
-* (MAX78000FTHR only) A new option `SEND_MIC_OUT_SDCARD` has been added to enable saving the detected sound snippets to SD card interface of the MAX78000FTHR board in [CODEC mode](#codec-mode). This feature is not available for MAX78000EVKIT.
-
-    * To _enable_ saving to an SD card, define `ENABLE_CODEC_MIC` in [project.mk](project.mk)
-
-        ```Makefile
-        # If enabled, it saves out the Mic samples used for inference to SDCARD
-        # Note that if both SDCARD and TFT are enabled, the TFT will be disabled to avoid SPI driver conflict.
-        PROJ_CFLAGS+=-DSEND_MIC_OUT_SDCARD
-        ```
-
-* (MAX78000FTHR only) A new option `ENABLE_CODEC_MIC` has been added to sample the board's _line input_ instead of the on-board digital microphone.
-
-    * To _enable_ line input, define `ENABLE_CODEC_MIC` in [project.mk](project.mk)
-
-        ```Makefile
-        # If enabled, it captures audio from line input of MAX9867 audio codec instead of the on-board mic.
-        # Note that SEND_MIC_OUT_SDCARD should be disabled in this mode
-        PROJ_CFLAGS+=-DENABLE_CODEC_MIC
-        ```
-
-* This project supports outputting microphone raw data over a serial port with the `SEND_MIC_OUT_SERIAL` option.  This is **disabled** by default.
-
-    * To enable this option, define `SEND_MIC_OUT_SERIAL` in [project.mk](project.mk)
-
-        ```Makefile
-        # If enabled, it sends out the Mic samples used for inference to the serial port
-        PROJ_CFLAGS+=-DSEND_MIC_OUT_SERIAL
-        ```
-
-### MAX78000 EVKIT jumper setting
-
-Make sure to install the jumper at JP20-CLK (INT position) as shown below:
-
-<img src="Resources/I2S_jumper.png" style="zoom:25%;" />
-
-Note: On board, external oscillator Y3 is used to generate an I2S clock. The I2S sample rate is 16kHz to match speech samples of the dataset.
-
-### MAX78000 EVKIT operations
-
-After power-cycle,  if the TFT display is blank, or not shown properly as below, please press RESET (SW5).
-
-The TFT display shows that it is ready. Press PB1 to start:
-
-<img src="Resources/20200604_142849.jpg" style="zoom: 25%;" />
-
-Once RED LED2 turns on, the initialization is complete and it is ready to accept keywords. If the PICO adapter is still connected to SWD, disconnect it and power cycle.
-
-The following words can be detected:
-
- ['**up', 'down', 'left', 'right', 'stop', 'go', 'yes', 'no', 'on', 'off', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'zero**']
-
- The MAX78000 KWS20 demo firmware recognizes keywords and reports result and confidence level.
-
-The microphone (U15) is located between JH4 and JH5 headers on EVKIT, (MK1) between J5 and J7 audio connectors on the MAX78000 Feather board.
-
-
-
-<img src="Resources/20200604_142536_1.jpg" style="zoom:25%;" />
-
-
-### MAX78000 Feather operations
-
-The KWS20 demo starts automatically after power-up or pressing the reset button (SW4).
-The TFT display is optional and not supplied with the MAX78000 Feather board.
-Users should use the PC terminal program to observe the KWS20 demo result as described in the "Using Debug Terminal" section.
-
-The MAX78000 Feather compatible 2.4'' TFT FeatherWing display can be ordered here:
-
-https://learn.adafruit.com/adafruit-2-4-tft-touch-screen-featherwing
-
-This TFT display comes fully assembled with dual sockets for MAX78000 Feather to plug into.
-
-***Note: If the SD card option is enabled, the TFT support will automatically be disabled regardless of the above setting.***
-
-While using the TFT display keep its power switch in the "ON" position. The TFT "Reset" button also can be used as Feather reset.
-Press PB1 (SW1) button to start the demo.
-
-<img src="Resources/feather_tft.jpg" style="zoom:25%;" />
-
-The PB1 (SW1) button is located as shown in the picture below:
-
-![](Resources/pb1_button.jpg)
-
-
-
-### Using Debug Terminal
-
-Debug terminal shows more status information and detected words. 
-
-The USB cable connected to CN1 (USB/PWR) provides power and serial communication.
-
-To configure the PC terminal program select the correct COM port and settings as follow:
-
-![](Resources/Terminal2.png)
-
-After turning on power or pressing the reset button the following message will appear in the terminal window:
-
-![](Resources/Terminal1.png)
-
-
-
-Terminal display after detecting words:
-
-![](Resources/Terminal3.png)
-
-
-
-The software components of the KWS20 demo are shown in the diagram below:
-
-![](Resources/Diagram.png)
-
-
+The Benchmark is preconfigured to read binary vectors located in the "bin" file from the SD Card. The on-board microphone is turned off, due to statistical variability in real-time audio. 
 
 ## CNN Model
-
+**planned to change to cough model in Spring 2025**
 The KWS20 v.3 Convolutional Neural Network (CNN) model consists of **1D** CNN with 8 layers and one fully connected layer to recognize keywords from 20 words dictionary used for training.
 
 ```python
@@ -299,25 +154,8 @@ The network synthesis script generates a pass/fail C example code which includes
 ```bash
 (ai8x-synthesis) $ ./gen-demos-max78000.sh
 ```
-
-The **kws20_v3** bare-bone C code is partially used in KWS20 Demo. In particular, CNN initialization, weights (kernels), and helper functions to load/unload weights and samples are ported from **kws20_v3** to KWS20 Demo.
-
-
-
-## KWS20 Demo Code
-
-KWS20 demo works in two modes:  Using a microphone (real-time), or offline processing:
-
-### Microphone Mode
-
-If `ENABLE_MIC_PROCESSING` is defined, the EVKIT I2S Mic is initialized to operate at 16KHz 32-bit samples.  In the main loop, the I2S buffer is checked and samples are stored in  **pChunkBuffonboard** buffer.  See the [build notes](#project-specific-build-notes) for instructions on setting this mode.
-
-### Offline Mode
-
-if **ENABLE_MIC_PROCESSING** is not defined, a header file containing the 16-bit samples (e.g. **kws_five.h**) should be included in the project to be used as the input . To create a header file from a wav file, use included utilities to record a wav file and convert it to the header file.  See the [build notes](#project-specific-build-notes) for instructions on setting this mode.
-
 ### CODEC Mode
-
+Record .wav files using the on-board microphone
 In this mode, the left channel (tip of the J5 3.5mm audio jack) of the line-in of MAX9867 audio CODEC (is used as the audio input source).  This mode is only supported on the MAX78000FTHR.  See the [build notes](#project-specific-build-notes) for instructions on enabling this feature.
 
 ```bash
@@ -329,7 +167,7 @@ $ python RealtimeAudio.py -i voicefile.wav -o voicefile.h
 
 ### Saving Sound Snippets to SD Card
 
-If `SEND_MIC_OUT_SDCARD` is defined, a new sequential directory is created on the SD card on every power-up or reset.  This is only supported on the MAX78000FTHR.  See [build notes](#project-specific-build-notes) for instructions on enabling this feature.
+A new sequential directory is created on the SD card on every power-up or reset.  This is only supported on the MAX78000FTHR.  See [build notes](#project-specific-build-notes) for instructions on enabling this feature.
 
 ![directory](Resources/SDcard_files.PNG)
 
