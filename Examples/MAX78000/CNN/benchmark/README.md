@@ -1,8 +1,10 @@
-# MAX78000 Keyword Spotting Demo v.3.2
+# Benchmark MAX78000
 
 
 
 ## Overview
+
+The current state of the Benchmark uses the Keyword Spotting Demo, described below:
 
 The Keyword Spotting Demo software demonstrates recognition of a number of keywords using MAX78000 EVKIT.  
 
