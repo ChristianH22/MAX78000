@@ -1,8 +1,9 @@
 /******************************************************************************
  *
- * Copyright (C) 2022-2023 Maxim Integrated Products, Inc. (now owned by 
- * Analog Devices, Inc.),
- * Copyright (C) 2023-2024 Analog Devices, Inc.
+ * Copyright (C) 2022-2023 Maxim Integrated Products, Inc. All Rights Reserved.
+ * (now owned by Analog Devices, Inc.),
+ * Copyright (C) 2023 Analog Devices, Inc. All Rights Reserved. This software
+ * is proprietary to Analog Devices, Inc. and its licensors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +28,16 @@
  */
 
 /* **** Includes **** */
+//###### Christian's Inclusions
+#include "sdhc.h"
+#include "read_bin.h"
+#include "cli.h"
+#include "user-cli.h"
+#include "uart.h"
+#include "ff.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-
 #include "mxc_sys.h"
 #include "fcr_regs.h"
 #include "icc.h"
@@ -95,7 +102,7 @@
 //#define ENABLE_CLASSIFICATION_DISPLAY  // enables printing classification result
 #define ENABLE_SILENCE_DETECTION // Starts collecting only after avg > THRESHOLD_HIGH, otherwise starts from first sample
 #undef EIGHT_BIT_SAMPLES // samples from Mic or Test vectors are eight bit, otherwise 16-bit
-#define ENABLE_MIC_PROCESSING // enables capturing Mic, otherwise a header file Test vector is used as sample data
+// #define ENABLE_MIC_PROCESSING // enables capturing Mic, otherwise a header file Test vector is used as sample data
 
 #ifndef ENABLE_MIC_PROCESSING
 #include "kws_five.h"
@@ -192,22 +199,25 @@ typedef enum _mic_processing_state {
 } mic_processing_state;
 
 /* Set of detected words */
+
+
+//Inference numerical????
 const char keywords[NUM_OUTPUTS][10] = { "UP",    "DOWN", "LEFT",   "RIGHT", "STOP",  "GO",
                                          "YES",   "NO",   "ON",     "OFF",   "ONE",   "TWO",
                                          "THREE", "FOUR", "FIVE",   "SIX",   "SEVEN", "EIGHT",
                                          "NINE",  "ZERO", "Unknown" };
 
 #ifdef SEND_MIC_OUT_SDCARD
-static char fileName[16];
-unsigned int snippetLength = 16384;
+static char fileName[256];
+unsigned int snippetLength = 256;
 #endif
 
 #ifndef ENABLE_MIC_PROCESSING
 
 #ifndef EIGHT_BIT_SAMPLES
-const int16_t voiceVector[] = KWS20_TEST_VECTOR;
+//int16_t voiceVector[VECTOR_SIZE];
 #else
-const int8_t voiceVector[] = KWS20_TEST_VECTOR;
+//const int8_t voiceVector[] = KWS20_TEST_VECTOR;
 #endif
 
 int8_t MicReader(int32_t *sample);
@@ -224,16 +234,18 @@ void i2s_isr(void)
 /* **** Functions Prototypes **** */
 #ifdef SEND_MIC_OUT_SDCARD
 extern int sd_init(void);
-extern int mkdirSoundSnippet_CD();
+//extern int mkdirSoundSnippet_CD();
 extern int writeSoundSnippet(char *snippetFilename, unsigned int snippetLength, int8_t *snippet);
+
 #endif
 void fail(void);
+int run_inference(char *file_n);
 uint8_t cnn_load_data(uint8_t *pIn);
 uint8_t MicReadChunk(uint16_t *avg);
 uint8_t AddTranspose(uint8_t *pIn, uint8_t *pOut, uint16_t inSize, uint16_t outSize,
                      uint16_t width);
 uint8_t check_inference(q15_t *ml_soft, int32_t *ml_data, int16_t *out_class, double *out_prob);
-void I2SInit(void);
+void I2SInit();
 static void codec_init(void);
 void HPF_init(void);
 int16_t HPF(int16_t input);
@@ -255,10 +267,10 @@ int font_2 = (int)&Liberation_Sans16x16[0];
 
 int32_t tot_usec = -100000;
 #ifdef WUT_ENABLE
-void WUT_IRQHandler(void)
+void WUT_IRQHandler()
 {
     i2s_flag = 1;
-    MXC_WUT_ClearFlags();
+    MXC_WUT_IntClear();
 
     tot_usec += WUT_USEC;
     //LED_On(LED2);
@@ -307,13 +319,30 @@ static uint32_t setColor(int r, int g, int b)
 
 /* **************************************************************************** */
 
-int main(void)
+
+// Function called by command line to run inference. Master Function
+int run_inference(char *file_n)
 {
+    // if (listFilesInBinDir() != FR_OK) {
+    //     printf("Failed to list files in 'bin' directory.\n");
+    //     return 0;
+    // }
+    // int count = 0;
+    // for (int i = 0; i < file_count; i++) {
+    //     if (strcmp(file_names[i], file_name) != 0) {
+    //         count++;
+    //     }
+        
+    // }
+    // if(count==file_count) {
+    //     printf("File does not exist, choose another");
+    //     return -1;
+    // }
+
     uint32_t sampleCounter = 0;
     mxc_tmr_unit_t units;
 
     uint8_t pChunkBuff[CHUNK];
-
     uint16_t avg = 0;
     uint16_t ai85Counter = 0;
     uint16_t wordCounter = 0;
@@ -321,10 +350,18 @@ int main(void)
     uint16_t avgSilenceCounter = 0;
 
     mic_processing_state procState = STOP;
-
+    printf("\n\n**cah**\n\n");
+    
+    
+    // printf("File running on CNN: %s", file_n);
+    // MXC_Delay(3000000);
+    // printf("\n\nStarting Power Collection");
+    
 #if defined(BOARD_FTHR_REVA)
     // Wait for PMIC 1.8V to become available, about 180ms after power up.
+   
     MXC_Delay(200000);
+    
 #endif
     /* Enable cache */
     MXC_ICC_Enable(MXC_ICC0);
@@ -375,12 +412,12 @@ int main(void)
     /* Configure P2.5, turn on the CNN Boost */
     cnn_boost_enable(MXC_GPIO2, MXC_GPIO_PIN_5);
 
-    PR_INFO("\n\nANALOG DEVICES \nKeyword Spotting Demo\nVer. %s \n", VERSION);
-    PR_INFO("\n***** Init *****\n");
+    // PR_INFO("\n\nANALOG DEVICES \nKeyword Spotting Demo\nVer. %s \n", VERSION);
+    // PR_INFO("\n***** Init *****\n");
     memset(pAI85Buffer, 0x0, sizeof(pAI85Buffer));
 
-    PR_DEBUG("pChunkBuff: %d\n", sizeof(pChunkBuff));
-    PR_DEBUG("pAI85Buffer: %d\n", sizeof(pAI85Buffer));
+    // PR_DEBUG("pChunkBuff: %d\n", sizeof(pChunkBuff));
+    //PR_DEBUG("pAI85Buffer: %d\n", sizeof(pAI85Buffer));
 #ifdef SEND_MIC_OUT_SDCARD
     /* SD card support */
     sd_init();
@@ -391,15 +428,16 @@ int main(void)
     cnn_load_weights();
     /* Configure state machine */
     cnn_configure();
-#ifdef SEND_MIC_OUT_SDCARD
-    /* Make Incremental Directory */
-    if (mkdirSoundSnippet_CD() != E_NO_ERROR) {
-        printf("*** !!!SD ERROR (mounting) !!! ***\n");
-        LED_Off(LED_GREEN);
-        LED_On(LED_RED); // Permanent Red Led
-        while (1) {}
-    }
-#endif
+
+    
+// #ifdef SEND_MIC_OUT_SDCARD
+//     if (mkdirSoundSnippet_CD() != E_NO_ERROR) {
+//         printf("*** !!!SD ERROR (mounting) !!! ***\n");
+//         LED_Off(LED_GREEN);
+//         LED_On(LED_RED); // Permanent Red Led
+//         while (1) {}
+//     }
+// #endif
 
 #if SLEEP_MODE == 1
     NVIC_EnableIRQ(CNN_IRQn);
@@ -465,18 +503,27 @@ int main(void)
     MXC_Delay(SEC(2)); // wait for debugger to connect
 #endif // #ifdef TFT_ENABLE
 
-    PR_INFO("\n*** READY ***\n");
+    // PR_INFO("\n*** READY ***\n");
 #ifdef WUT_ENABLE
     MXC_WUT_Enable(); // Start WUT
 #endif
 
+    // Removed, as this function is called from the command line
+    //#### Christian 9/4/2024 - processes voiceVector - needs to be improved for multiple voiceVectors? ####/
+    // if (strcmp(fil, "all") != ){
+    //     readAllFilesInBinDir();
+    // }
+    
+
+
     /* Read samples */
     while (1) {
 #ifndef ENABLE_MIC_PROCESSING
-
+        
         /* end of test vectors */
+        // voiceVector is the binary audio
         if (sampleCounter >= sizeof(voiceVector) / sizeof(voiceVector[0])) {
-            PR_DEBUG("End of test Vector\n");
+            PR_DEBUG("");
             break;
         }
 
@@ -519,19 +566,19 @@ int main(void)
 #ifdef ENABLE_SILENCE_DETECTION // disable to start collecting data immediately.
 
             /* Display average envelope as a bar */
-#ifdef ENABLE_PRINT_ENVELOPE
-        PR_DEBUG("%.6d|", sampleCounter);
+// #ifdef ENABLE_PRINT_ENVELOPE
+//         PR_DEBUG("%.6d|", sampleCounter);
 
-        for (int i = 0; i < avg / 10; i++) {
-            PR_DEBUG("=");
-        }
+//         for (int i = 0; i < avg / 10; i++) {
+//             PR_DEBUG("=");
+//         }
 
-        if (avg >= thresholdHigh) {
-            PR_DEBUG("*");
-        }
+//         if (avg >= thresholdHigh) {
+//             PR_DEBUG("*");
+//         }
 
-        PR_DEBUG("[%d]\n", avg);
-#endif
+//         PR_DEBUG("[%d]\n", avg);
+// #endif
 
         /* if we have not detected voice, check the average*/
         if (procState == SILENCE) {
@@ -591,8 +638,8 @@ int main(void)
                 int endIndex =
                     (utteranceIndex + SAMPLE_SIZE - PREAMBLE_SIZE - zeroPad) % SAMPLE_SIZE;
 
-                PR_DEBUG("Word starts from index %d to %d, padded with %d zeros, avg:%d > %d \n",
-                         utteranceIndex, endIndex, zeroPad, utteranceAvg, thresholdHigh);
+                // PR_DEBUG("Word starts from index %d to %d, padded with %d zeros, avg:%d > %d \n",
+                        //  utteranceIndex, endIndex, zeroPad, utteranceAvg, thresholdHigh);
 
                 // zero padding
                 memset(pChunkBuff, 0, CHUNK);
@@ -667,7 +714,7 @@ int main(void)
                 }
 
                 //----------------------------------  : invoke AI85 CNN
-                PR_DEBUG("%.6d: Starts CNN: %d\n", sampleCounter, wordCounter);
+                // PR_DEBUG("%.6d: Starts CNN: %d\n", sampleCounter, wordCounter);
                 /* enable CNN clock */
                 MXC_SYS_ClockEnable(MXC_SYS_PERIPH_CLOCK_CNN);
 
@@ -714,9 +761,9 @@ int main(void)
                 cnn_stop();
                 /* Disable CNN clock to save power */
                 MXC_SYS_ClockDisable(MXC_SYS_PERIPH_CLOCK_CNN);
-                /* Get time */
+                /* Time we want to retrieve for SD? */
                 MXC_TMR_GetTime(MXC_TMR0, cnn_time, (void *)&cnn_time, &units);
-                PR_DEBUG("%.6d: Completes CNN: %d\n", sampleCounter, wordCounter);
+                // PR_DEBUG("%.6d: Completes CNN: %d\n", sampleCounter, wordCounter);
 
                 switch (units) {
                 case TMR_UNIT_NANOSEC:
@@ -735,7 +782,7 @@ int main(void)
                     break;
                 }
 
-                PR_DEBUG("CNN Time: %d us\n", cnn_time);
+                // PR_DEBUG("CNN Time: %d us\n", cnn_time);
 
                 /* run softmax */
                 softmax_q17p14_q15((const q31_t *)ml_data, NUM_OUTPUTS, ml_softmax);
@@ -756,14 +803,16 @@ int main(void)
                 /* find detected class with max probability */
                 ret = check_inference(ml_softmax, ml_data, &out_class, &probability);
 
-                PR_DEBUG("----------------------------------------- \n");
+                // PR_DEBUG("----------------------------------------- \n");
                 /* Treat low confidence detections as unknown*/
                 if (!ret || out_class == NUM_OUTPUTS - 1) {
-                    PR_DEBUG("Detected word: %s", "Unknown");
+                    // MXC_Delay(3000000);
+                    // PR_DEBUG("Detected word: %s", "Unknown");
                 } else {
-                    PR_DEBUG("Detected word: %s (%0.1f%%)", keywords[out_class], probability);
+                    // MXC_Delay(3000000);
+                    // PR_DEBUG("Detected word: %s (%0.1f%%)", keywords[out_class], probability);
                 }
-                PR_DEBUG("\n----------------------------------------- \n");
+                // PR_DEBUG("\n----------------------------------------- \n");
 
                 Max = 0;
                 Min = 0;
@@ -824,11 +873,13 @@ int main(void)
                  *  - Solid Red if there is error with SD card interface
                  *
                  **/
-                LED_Off(LED_GREEN);
+                // LED_Off(LED_GREEN);
+                int low_conf = 0;
                 if (!ret || out_class == NUM_OUTPUTS - 1) {
+                    low_conf++;
                     // Low Confidence or unknown
-                    LED_On(LED_GREEN);
-                    LED_On(LED_RED);
+                    // LED_On(LED_GREEN);
+                    // LED_On(LED_RED);
                 }
 
                 int i = 0;
@@ -838,20 +889,29 @@ int main(void)
                 }
                 if (ret && out_class != NUM_OUTPUTS - 1) {
                     // Word detected with high confidence
-                    snprintf(fileName, sizeof(fileName), "%04d_%s", fileCount, keywords[out_class]);
+                    
+                    
+                    file_n[strlen(file_n) - 4] = '\0';
+                    //snprintf(fileName, sizeof(fileName), "%s_%s_%d", keywords[out_class], s[0], cnn_time);
+                    snprintf(fileName, sizeof(fileName), "%s_%04d_%s_%0.1f_%du", file_n, fileCount, keywords[out_class], probability, cnn_time);  //xxx ultimately input file code, removing .bin
+                    
                 } else {
+                    file_n[strlen(file_n) - 4] = '\0';
                     // Unknown or Low confidence: add "L" at the end of file name
-                    snprintf(fileName, sizeof(fileName), "%04d_%s_L", fileCount, "Unknown");
+                    snprintf(fileName, sizeof(fileName), "%s_%04d_%s_%0.1f_%du_L", file_n, fileCount, "Unknown", probability, cnn_time);
                 }
-                if (writeSoundSnippet((char *)fileName, snippetLength, &snippet[0]) != E_NO_ERROR) {
-                    printf("*** !!!SD ERROR!!! ***\n");
-                    LED_Off(LED_GREEN);
-                    LED_On(LED_RED); // Permanent Red Led
-                    while (1) {}
-                }
+                // Removed for power test, print filename instead
+                // if (writeSoundSnippet((char *)fileName, snippetLength, &snippet[0]) != E_NO_ERROR) {
+                //     printf("*** !!!SD ERROR!!! ***\n");
+                //     // LED_Off(LED_GREEN);
+                //     // LED_On(LED_RED); // Permanent Red Led
+                //     while (1) {}
+                printf(fileName);
+                // }
                 fileCount++;
-                LED_Off(LED_RED);
-                LED_On(LED_GREEN);
+                // LED_Off(LED_RED);
+                // LED_On(LED_GREEN);
+
 #endif
 
 #ifdef SEND_MIC_OUT_SERIAL
@@ -883,14 +943,19 @@ int main(void)
     }
 
     /* Turn off LED2 (Red) */
-    LED_Off(LED2);
-    PR_DEBUG("Total Samples:%d, Total Words: %d \n", sampleCounter, wordCounter);
-
+    // LED_Off(LED2);
+    // PR_DEBUG("Total Samples:%d, Total Words: %d \n", sampleCounter, wordCounter);
+    // printf("\n\nStopping Power Collection\n\n");
+    fflush(stdout);
+    // MXC_Delay(SEC(2));
+    printf("\n\n**hac**\n\n");
+    
 #ifdef TFT_ENABLE
     TFT_End(wordCounter);
 #endif
 
-    while (1) {}
+    //while (1) {}
+    return 0;
 }
 
 /* **************************************************************************** */
@@ -914,7 +979,7 @@ static void codec_init(void)
         printf("Error enabling record path");
 }
 #endif
-void I2SInit(void)
+void I2SInit()
 {
     mxc_i2s_req_t req;
     int32_t err;
@@ -1028,7 +1093,7 @@ uint8_t check_inference(q15_t *ml_soft, int32_t *ml_data, int16_t *out_class, do
 #endif
     }
 
-    PR_DEBUG("Min: %d,   Max: %d \n", Min, Max);
+    // PR_DEBUG("Min: %d,   Max: %d \n", Min, Max);
 
     /* check if probability is low */
     if (*out_prob > INFERENCE_THRESHOLD) {
@@ -1215,7 +1280,7 @@ uint8_t MicReadChunk(uint16_t *avg)
 
 #ifndef ENERGY
         /* Turn on LED2 (Red) */
-        LED_On(LED2);
+        // LED_On(LED2);
 #endif
 
         /* absolute for averaging */
@@ -1303,52 +1368,3 @@ int16_t HPF(int16_t input)
 }
 
 /************************************************************************************/
-#ifdef TFT_ENABLE
-void TFT_Intro(void)
-{
-    char buff[TFT_BUFF_SIZE];
-    memset(buff, 32, TFT_BUFF_SIZE);
-    TFT_Print(buff, 55, 10, font_2, snprintf(buff, sizeof(buff), "ANALOG DEVICES"));
-    TFT_Print(buff, 35, 40, font_1, snprintf(buff, sizeof(buff), "Keyword Spotting Demo"));
-    TFT_Print(buff, 65, 70, font_1, snprintf(buff, sizeof(buff), "Ver. %s", VERSION));
-    TFT_Print(buff, 5, 110, font_1, snprintf(buff, sizeof(buff), "Following keywords can be"));
-    TFT_Print(buff, 5, 135, font_1, snprintf(buff, sizeof(buff), "detected:"));
-    TFT_Print(buff, 35, 160, font_1, snprintf(buff, sizeof(buff), "0...9, up, down, left, right"));
-    TFT_Print(buff, 35, 185, font_1, snprintf(buff, sizeof(buff), "stop, go, yes, no, on, off"));
-    TFT_Print(buff, 20, 210, font_2, snprintf(buff, sizeof(buff), "PRESS PB1(SW1) TO START!"));
-
-    while (!PB_Get(0)) {}
-
-    MXC_TFT_ClearScreen();
-#ifdef BOARD_EVKIT_V1
-    TFT_Print(buff, 20, 20, font_1, snprintf(buff, sizeof(buff), "Wait for RED LED to turn on"));
-    TFT_Print(buff, 20, 50, font_1, snprintf(buff, sizeof(buff), "and start saying keywords..."));
-    TFT_Print(buff, 20, 110, font_1, snprintf(buff, sizeof(buff), "If RED LED didn't turn on in"));
-    TFT_Print(buff, 20, 140, font_1, snprintf(buff, sizeof(buff), "2 sec, disconnect SWD and"));
-    TFT_Print(buff, 20, 170, font_1, snprintf(buff, sizeof(buff), "power cycle."));
-#else
-    TFT_Print(buff, 20, 50, font_1, snprintf(buff, sizeof(buff), "Start saying keywords..."));
-#endif
-}
-
-/***************************************************************************** */
-void TFT_Print(char *str, int x, int y, int font, int length)
-{
-    // fonts id
-    text_t text;
-    text.data = str;
-    text.len = length;
-    MXC_TFT_PrintFont(x, y, font, &text, NULL);
-}
-
-/***************************************************************************** */
-void TFT_End(uint16_t words)
-{
-    char buff[TFT_BUFF_SIZE];
-    memset(buff, 32, TFT_BUFF_SIZE);
-    MXC_TFT_ClearScreen();
-    TFT_Print(buff, 70, 30, font_2, snprintf(buff, sizeof(buff), "Demo Stopped!"));
-    TFT_Print(buff, 10, 60, font_1, snprintf(buff, sizeof(buff), "Number of words: %d ", words));
-    TFT_Print(buff, 0, 180, font_1, snprintf(buff, sizeof(buff), "PRESS RESET TO TRY AGAIN!"));
-}
-#endif
